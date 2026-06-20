@@ -38,7 +38,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "supabaseUrl": "YOUR_SUPABASE_URL",
