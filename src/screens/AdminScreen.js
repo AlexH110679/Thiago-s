@@ -1021,37 +1021,7 @@ const AdminScreen = ({ navigation }) => {
               />
             </View>
 
-            {/* Enlace Configurado */}
-            <Text style={{ color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', alignSelf: 'flex-start', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Enlace Web (Vercel):
-            </Text>
-            <TextInput
-              style={{ width: '100%', backgroundColor: COLORS.bgTertiary, color: COLORS.textPrimary, fontSize: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 }}
-              value={storeUrl}
-              onChangeText={setStoreUrl}
-              placeholder="https://ambrosia-psi.vercel.app"
-              placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
 
-            {/* Actions */}
-            <View style={{ flexDirection: 'row', gap: 8, width: '100%', marginBottom: 10 }}>
-              <TouchableOpacity
-                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.gold, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}
-                onPress={handleSaveQrUrl}
-              >
-                <Ionicons name="save-outline" size={16} color={COLORS.bgPrimary} />
-                <Text style={{ color: COLORS.bgPrimary, fontWeight: '700', fontSize: 14 }}>Guardar QR</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{ paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.bgTertiary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border }}
-                onPress={handleTestQrLink}
-              >
-                <Ionicons name="open-outline" size={18} color={COLORS.textPrimary} />
-              </TouchableOpacity>
-            </View>
 
             <TouchableOpacity
               style={{ width: '100%', paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.bgTertiary, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border }}
