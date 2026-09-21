@@ -162,12 +162,6 @@ export default function App() {
           setPoliciesAccepted(true);
         }
 
-        const storedApk = await fetchQrUrl();
-        if (storedApk) setApkUrl(storedApk);
-        
-        const webChoice = await AsyncStorage.getItem('@web_choice_made');
-        if (webChoice) setShowWebPrompt(false);
-
       } catch (e) {
         // Fail silently — app works in offline mode
         console.warn('Init seed failed:', e.message);
@@ -197,11 +191,6 @@ export default function App() {
     }
   };
 
-  const handleWebContinue = async () => {
-    await AsyncStorage.setItem('@web_choice_made', 'true');
-    setShowWebPrompt(false);
-  };
-
   if (!policiesAccepted) {
     return (
       <SafeAreaProvider>
@@ -217,35 +206,6 @@ export default function App() {
       <SafeAreaProvider>
         <AlertProvider>
           <CartProvider>
-            
-            {showWebPrompt && (
-              <Modal visible transparent animationType="fade">
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-                  <View style={{ backgroundColor: COLORS.bgSecondary, padding: 30, borderRadius: 20, alignItems: 'center', maxWidth: 400, width: '100%', borderWidth: 1, borderColor: COLORS.gold }}>
-                    <Ionicons name="phone-portrait-outline" size={50} color={COLORS.gold} style={{ marginBottom: 15 }} />
-                    <Text style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' }}>¡Bienvenido a Thiago's!</Text>
-                    <Text style={{ color: COLORS.textMuted, fontSize: 15, textAlign: 'center', marginBottom: 25, lineHeight: 22 }}>
-                      Para una experiencia más rápida y completa, te recomendamos descargar nuestra Aplicación oficial (APK).
-                    </Text>
-
-                    <TouchableOpacity 
-                      style={{ backgroundColor: COLORS.gold, width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 12 }}
-                      onPress={() => apkUrl ? Linking.openURL(apkUrl) : alert('El administrador aún no ha cargado el APK.')}
-                    >
-                      <Text style={{ color: COLORS.bgPrimary, fontWeight: 'bold', fontSize: 16 }}>📲 Descargar Aplicación</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      style={{ backgroundColor: COLORS.bgTertiary, width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border }}
-                      onPress={handleWebContinue}
-                    >
-                      <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold', fontSize: 16 }}>🌐 Usar Navegador Web</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </Modal>
-            )}
-
             <NavigationContainer theme={AmbrosiaNavTheme}>
               <AppNav />
             </NavigationContainer>

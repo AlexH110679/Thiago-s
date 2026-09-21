@@ -178,9 +178,9 @@ const AdminScreen = ({ navigation }) => {
   };
 
   // Form & System state
-  const defaultUrl = ''; 
+  const defaultUrl = 'https://ambrosia-psi.vercel.app'; 
   const defaultWaUrl = 'https://wa.me/573114661605?text=Hola%20Thiago%27s%20Licores,%20quisiera%20hacer%20un%20pedido';
-  const [storeUrl, setStoreUrl] = useState('');
+  const [storeUrl, setStoreUrl] = useState(defaultUrl);
   const [formName, setFormName] = useState('');
   const [configDelivery, setConfigDelivery] = useState(baseDeliveryCost?.toString() || '4000');
 
@@ -1023,13 +1023,13 @@ const AdminScreen = ({ navigation }) => {
 
             {/* Enlace Configurado */}
             <Text style={{ color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', alignSelf: 'flex-start', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Enlace de Descarga de la App (APK):
+              Enlace Web (Vercel):
             </Text>
             <TextInput
               style={{ width: '100%', backgroundColor: COLORS.bgTertiary, color: COLORS.textPrimary, fontSize: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 }}
               value={storeUrl}
               onChangeText={setStoreUrl}
-              placeholder="Ej: https://expo.dev/artifacts/... (Pega aquí el enlace de tu APK)"
+              placeholder="https://ambrosia-psi.vercel.app"
               placeholderTextColor={COLORS.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
