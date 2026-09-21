@@ -1,4 +1,3 @@
-// src/screens/CartScreen.js
 import React, { useState } from 'react';
 import {
   View,
@@ -13,12 +12,15 @@ import {
   Modal,
   StatusBar,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { COLORS, SIZES, CATEGORY_LABELS } from '../constants/theme';
 import { useCart } from '../context/CartContext';
+import { useAlert } from '../context/AlertContext';
 import { createOrder } from '../services/productService';
 
 const CartScreen = ({ navigation }) => {
@@ -38,31 +40,101 @@ const CartScreen = ({ navigation }) => {
     applyPromo,
     removePromo,
   } = useCart();
+  const { showAlert } = useAlert();
 
   const [promoInput, setPromoInput] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [receiptVisible, setReceiptVisible] = useState(false);
   const [deliveryModalVisible, setDeliveryModalVisible] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [deliveryData, setDeliveryData] = useState({
     nombre: '',
     celular: '',
     direccion: '',
     barrio: '',
     detalles: '',
+    gpsUrl: '',
   });
   const [orderData, setOrderData] = useState(null);
 
   const formatPrice = (price) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(price);
 
+  const handleGetLocation = async () => {
+    setGpsLoading(true);
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert(
+          'Permiso Requerido',
+          'Por favor concede el permiso de ubicación en tu celular para detectar automáticamente tu posición.'
+        );
+        setGpsLoading(false);
+        return;
+      }
+
+      let location;
+      try {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (errHigh) {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
+
+      const { latitude, longitude } = location.coords;
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+      let addressText = '';
+
+      try {
+        let geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (geocode && geocode.length > 0) {
+          const item = geocode[0];
+          const parts = [
+            item.street ? `${item.street} ${item.name && item.name !== item.street ? '#' + item.name : ''}` : item.name,
+            item.subregion || item.district || item.city,
+          ].filter(Boolean);
+          addressText = parts.join(', ');
+        }
+      } catch (geoErr) {
+        console.warn('Geocodificación inversa:', geoErr);
+      }
+
+      if (!addressText) {
+        addressText = `Ubicación GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      }
+
+      setDeliveryData((prev) => ({
+        ...prev,
+        direccion: addressText,
+        gpsUrl: mapsUrl,
+      }));
+
+      showAlert(
+        '¡Ubicación GPS Detectada!',
+        `Se ha capturado tu ubicación exacta para el domiciliario.\n\n📍 Dirección: ${addressText}`
+      );
+    } catch (error) {
+      console.warn('Error en handleGetLocation:', error);
+      showAlert(
+        'Error de Ubicación',
+        'No se pudo obtener la ubicación GPS actual. Asegúrate de activar el GPS en tu celular.'
+      );
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
   const handlePromo = () => {
     if (!promoInput.trim()) return;
     const result = applyPromo(promoInput);
     if (result.success) {
-      Alert.alert('¡Descuento aplicado!', `Código ${promoInput.toUpperCase()} activo: ${result.discount}% de descuento.`);
+      showAlert('¡Descuento aplicado!', `Código ${promoInput.toUpperCase()} activo: ${result.discount}% de descuento.`);
       setPromoInput('');
     } else {
-      Alert.alert('Código inválido', 'El código ingresado no es válido. Intenta con THIAGO10, FIESTA20 o LICOR15.');
+      showAlert('Código inválido', 'El código ingresado no es válido. Intenta con THIAGO10, FIESTA20 o LICOR15.');
     }
   };
 
@@ -71,58 +143,173 @@ const CartScreen = ({ navigation }) => {
     setDeliveryModalVisible(true);
   };
 
-  const handleCheckout = async () => {
-    if (!deliveryData.nombre || !deliveryData.celular || !deliveryData.direccion || !deliveryData.barrio) {
-      Alert.alert('Datos incompletos', 'Por favor, completa los campos obligatorios (Nombre, Celular, Dirección y Barrio).');
-      return;
+  const sendToWhatsApp = async (phone, message) => {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const encodedMsg = encodeURIComponent(message);
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodedMsg}`;
+    const deepLink = `whatsapp://send?phone=${cleanPhone}&text=${encodedMsg}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(deepLink);
+      if (canOpen) {
+        await Linking.openURL(deepLink);
+      } else {
+        await Linking.openURL(waUrl);
+      }
+    } catch (err) {
+      try {
+        await Linking.openURL(waUrl);
+      } catch (err2) {
+        showAlert(
+          'WhatsApp',
+          `No se pudo abrir WhatsApp automáticamente. Puedes comunicarte directamente al número +${cleanPhone}.`
+        );
+      }
+    }
+  };
+
+  const buildWhatsAppMessage = (orderId, itemsList, sub, discount, fee, tot, delivery) => {
+    let msg = `🛍️ *NUEVO PEDIDO EN THIAGO'S LICORES & SNACKS*\n`;
+    msg += `*Orden #${String(orderId).padStart(4, '0')}*\n\n`;
+    msg += `📋 *Detalle del Pedido:*\n`;
+    (itemsList || []).forEach(item => {
+      msg += `• ${item.quantity}x ${item.name} (${formatPrice(item.price)})\n`;
+    });
+    msg += `\n💵 *Resumen:*`;
+    msg += `\nSubtotal: ${formatPrice(sub)}`;
+    if (discount > 0) msg += `\nDescuento: -${formatPrice(discount)}`;
+    if (fee > 0) msg += `\nDomicilio: ${formatPrice(fee)}`;
+    msg += `\n*TOTAL A PAGAR: ${formatPrice(tot)}*\n\n`;
+    msg += `📍 *Datos de Entrega:*\n`;
+    msg += `• Nombre: ${delivery?.nombre || 'Cliente'}\n`;
+    msg += `• Teléfono: ${delivery?.celular || 'N/A'}\n`;
+    msg += `• Dirección: ${delivery?.direccion || 'N/A'}\n`;
+    msg += `• Barrio: ${delivery?.barrio || 'N/A'}\n`;
+    if (delivery?.detalles) msg += `• Apto/Casa/Notas: ${delivery.detalles}\n`;
+
+    // Enlace de Mapa Garantizado: Si se capturó GPS usa las coordenadas exactas, si no, genera la búsqueda de la dirección
+    const mapLink = delivery?.gpsUrl
+      ? delivery.gpsUrl
+      : (delivery?.direccion
+          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.direccion + (delivery.barrio ? ', ' + delivery.barrio : ''))}`
+          : null);
+
+    if (mapLink) {
+      msg += `\n🗺️ *Ubicación para Domiciliario (Google Maps / Waze):*\n${mapLink}\n`;
     }
 
+    msg += `\n¡Quedo atento a la confirmación de mi pedido! Gracias.`;
+    return msg;
+  };
+
+  const processCheckout = async () => {
     setCheckoutLoading(true);
     try {
       const order = await createOrder({
         items,
         subtotal,
         discountAmount,
+        deliveryFee,
         total,
         promoCode,
       });
-      setOrderData({ ...order, itemsSnapshot: [...items] });
-      
-      // WhatsApp Message Formatting
-      const ADMIN_PHONE = "573114661605"; // Cambiar por el número real del administrador
-      let msg = `Hola Thiago's Licores, quiero realizar el siguiente pedido (Orden #${order.id}):\n\n`;
-      items.forEach(item => {
-        msg += `- ${item.quantity}x ${item.name} (${formatPrice(item.price)})\n`;
+
+      const itemsSnapshot = [...items];
+      const deliverySnapshot = { ...deliveryData };
+
+      setOrderData({
+        ...order,
+        itemsSnapshot,
+        deliverySnapshot,
+        subtotal,
+        discount_amount: discountAmount,
+        delivery_fee: deliveryFee,
+        total,
       });
-      msg += `\nSubtotal: ${formatPrice(subtotal)}`;
-      if (discountAmount > 0) msg += `\nDescuento: -${formatPrice(discountAmount)}`;
-      if (deliveryFee > 0) msg += `\nDomicilio: ${formatPrice(deliveryFee)}`;
-      msg += `\n*TOTAL A PAGAR: ${formatPrice(total)}*\n\n`;
-      msg += `*Datos de envío:*\n`;
-      msg += `Nombre: ${deliveryData.nombre}\n`;
-      msg += `Celular: ${deliveryData.celular}\n`;
-      msg += `Dirección: ${deliveryData.direccion}\n`;
-      msg += `Barrio: ${deliveryData.barrio}\n`;
-      if (deliveryData.detalles) msg += `Casa/Apto: ${deliveryData.detalles}\n`;
-      
-      const whatsappUrl = `whatsapp://send?phone=${ADMIN_PHONE}&text=${encodeURIComponent(msg)}`;
-      
+
+      const ADMIN_PHONE = "573114661605";
+      const msg = buildWhatsAppMessage(
+        order.id,
+        itemsSnapshot,
+        subtotal,
+        discountAmount,
+        deliveryFee,
+        total,
+        deliverySnapshot
+      );
+
       clearCart();
       removePromo();
       setDeliveryModalVisible(false);
       setReceiptVisible(true);
-      
-      try {
-        await Linking.openURL(whatsappUrl);
-      } catch (err) {
-        console.log("No se pudo abrir WhatsApp:", err);
-      }
-      
+
+      // Open WhatsApp automatically
+      await sendToWhatsApp(ADMIN_PHONE, msg);
+
     } catch (e) {
-      Alert.alert('Error al procesar', e.message || 'No se pudo completar la compra. Verifica tu conexión.');
+      showAlert('Error al procesar', e.message || 'No se pudo completar la compra. Verifica tu conexión.');
     } finally {
       setCheckoutLoading(false);
     }
+  };
+
+  const handleCheckout = async () => {
+    const nombre = deliveryData.nombre?.trim() || '';
+    const celular = deliveryData.celular?.trim() || '';
+    const direccion = deliveryData.direccion?.trim() || '';
+    const barrio = deliveryData.barrio?.trim() || '';
+    const detalles = deliveryData.detalles?.trim() || '';
+
+    if (nombre.length < 3) {
+      showAlert('Nombre inválido', 'Por favor ingresa tu nombre completo (mínimo 3 caracteres).');
+      return;
+    }
+    
+    const celularLimpio = celular.replace(/[^0-9]/g, '');
+    if (celularLimpio.length < 10) {
+      showAlert('Celular inválido', 'El número de celular debe tener al menos 10 dígitos.');
+      return;
+    }
+
+    if (direccion.length < 5) {
+      showAlert('Dirección inválida', 'Por favor ingresa una dirección completa.');
+      return;
+    }
+
+    if (barrio.length < 3) {
+      showAlert('Barrio inválido', 'El nombre del barrio es muy corto, por favor sé más específico.');
+      return;
+    }
+
+    if (detalles.length < 2) {
+      showAlert('Detalles incompletos', 'Indica el número de casa, apto, o información extra detallada (ej. "Casa 2", "Apto 101").');
+      return;
+    }
+
+    // Validación inteligente de dirección colombiana si no se usó el GPS
+    const regexNomenclatura = /^(calle|cl|carrera|cra|cr|transversal|tv|diagonal|dg|avenida|av|trans|kras|autopista|circular)\s*\d+/i;
+    const direccionLimpia = deliveryData.direccion.trim();
+    const esNomenclaturaValida = regexNomenclatura.test(direccionLimpia);
+
+    if (!deliveryData.gpsUrl && !esNomenclaturaValida && direccionLimpia.length < 12) {
+      showAlert(
+        '📍 Confirmación de Ubicación',
+        `La dirección escrita ("${direccionLimpia}") no parece contener una nomenclatura válida (Ej: Calle 45 # 12-34).\n\nPara evitar domicilios perdidos, debes capturar tu ubicación GPS o escribir una dirección con nomenclatura válida.`,
+        [
+          {
+            text: '📍 Capturar mi GPS',
+            onPress: handleGetLocation,
+          },
+          {
+            text: 'Corregir Dirección',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
+
+    await processCheckout();
   };
 
   const handleCloseReceipt = () => {
@@ -181,7 +368,7 @@ const CartScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>Mi Carrito</Text>
         {items.length > 0 && (
           <TouchableOpacity
-            onPress={() => Alert.alert('Vaciar carrito', '¿Deseas eliminar todos los artículos?', [
+            onPress={() => showAlert('Vaciar carrito', '¿Deseas eliminar todos los artículos?', [
               { text: 'Cancelar', style: 'cancel' },
               { text: 'Vaciar', style: 'destructive', onPress: clearCart },
             ])}
@@ -200,7 +387,7 @@ const CartScreen = ({ navigation }) => {
           <Text style={styles.emptyDesc}>Agrega productos desde el catálogo para comenzar tu pedido.</Text>
           <TouchableOpacity
             style={styles.emptyBtn}
-            onPress={() => navigation.navigate('Tienda')}
+            onPress={() => navigation.navigate('Tienda', { screen: 'Home' })}
           >
             <LinearGradient colors={[COLORS.gold, COLORS.goldDark]} style={styles.emptyBtnGradient}>
               <Text style={styles.emptyBtnText}>Ver Catálogo</Text>
@@ -324,6 +511,47 @@ const CartScreen = ({ navigation }) => {
                 value={deliveryData.celular}
                 onChangeText={(text) => setDeliveryData({ ...deliveryData, celular: text })}
               />
+              {/* GPS Location Button */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: deliveryData.gpsUrl ? COLORS.success + '22' : COLORS.goldSoft,
+                  borderWidth: 1,
+                  borderColor: deliveryData.gpsUrl ? COLORS.success : COLORS.gold,
+                  borderRadius: SIZES.radiusSm,
+                  paddingVertical: 12,
+                  paddingHorizontal: 14,
+                  marginBottom: 12,
+                  gap: 8,
+                }}
+                onPress={handleGetLocation}
+                disabled={gpsLoading}
+                activeOpacity={0.8}
+              >
+                {gpsLoading ? (
+                  <ActivityIndicator color={COLORS.gold} size="small" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={deliveryData.gpsUrl ? "checkmark-circle" : "location"}
+                      size={18}
+                      color={deliveryData.gpsUrl ? COLORS.success : COLORS.gold}
+                    />
+                    <Text
+                      style={{
+                        color: deliveryData.gpsUrl ? COLORS.success : COLORS.gold,
+                        fontWeight: '700',
+                        fontSize: 13,
+                      }}
+                    >
+                      {deliveryData.gpsUrl ? '📍 GPS Capturado (Toca para actualizar)' : '📍 Capturar mi Ubicación GPS'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
               <TextInput
                 style={styles.inputField}
                 placeholder="Dirección completa *"
@@ -340,29 +568,70 @@ const CartScreen = ({ navigation }) => {
               />
               <TextInput
                 style={styles.inputField}
-                placeholder="Casa / Apto / Detalles (Opcional)"
+                placeholder="Casa / Apto / Detalles *"
                 placeholderTextColor={COLORS.textMuted}
                 value={deliveryData.detalles}
                 onChangeText={(text) => setDeliveryData({ ...deliveryData, detalles: text })}
               />
               
-              <View style={{ flexDirection: 'row', gap: SIZES.sm, marginTop: SIZES.md }}>
+              <View style={{ marginTop: SIZES.lg, width: '100%', gap: 10 }}>
                 <TouchableOpacity
-                  style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: SIZES.radiusMd }}
-                  onPress={() => setDeliveryModalVisible(false)}
-                >
-                  <Text style={{ color: COLORS.textMuted, fontWeight: '700' }}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, borderRadius: SIZES.radiusMd, overflow: 'hidden' }}
+                  style={{
+                    width: '100%',
+                    borderRadius: SIZES.radiusMd,
+                    overflow: 'hidden',
+                    shadowColor: '#25D366',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.35,
+                    shadowRadius: 8,
+                    elevation: 6,
+                  }}
                   onPress={handleCheckout}
                   disabled={checkoutLoading}
+                  activeOpacity={0.85}
                 >
-                  <LinearGradient colors={[COLORS.gold, COLORS.goldDark]} style={{ paddingVertical: 15, alignItems: 'center' }}>
-                    <Text style={{ color: COLORS.bgPrimary, fontWeight: '700' }}>
-                      {checkoutLoading ? 'Enviando...' : 'Confirmar Pedido'}
-                    </Text>
+                  <LinearGradient
+                    colors={['#25D366', '#128C7E']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{
+                      paddingVertical: 16,
+                      paddingHorizontal: 20,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                    }}
+                  >
+                    {checkoutLoading ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="logo-whatsapp" size={22} color="#ffffff" style={{ marginRight: 8 }} />
+                        <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 16, letterSpacing: 0.3 }}>
+                          Enviar Pedido por WhatsApp
+                        </Text>
+                      </>
+                    )}
                   </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    borderRadius: SIZES.radiusMd,
+                    backgroundColor: COLORS.bgTertiary,
+                  }}
+                  onPress={() => setDeliveryModalVisible(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: COLORS.textSecondary, fontWeight: '600', fontSize: 14 }}>
+                    Cancelar
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -385,13 +654,15 @@ const CartScreen = ({ navigation }) => {
                 <Ionicons name="checkmark-circle" size={52} color={COLORS.success} />
               </View>
               <Text style={styles.receiptTitle}>¡Pedido Exitoso!</Text>
-              <Text style={styles.receiptSubtitle}>Gracias por elegir Thiago's Licores & Snacks</Text>
+              <Text style={styles.receiptSubtitle}>
+                Tu pedido fue registrado en el historial y enviado a WhatsApp para confirmación.
+              </Text>
             </View>
 
             {/* Order Details */}
             <View style={styles.receiptDivider}>
               <View style={styles.receiptDividerLine} />
-              <Text style={styles.receiptDividerText}>FACTURA</Text>
+              <Text style={styles.receiptDividerText}>COMPROBANTE</Text>
               <View style={styles.receiptDividerLine} />
             </View>
 
@@ -399,7 +670,7 @@ const CartScreen = ({ navigation }) => {
               <View style={styles.receiptMeta}>
                 <View style={styles.receiptMetaRow}>
                   <Text style={styles.receiptMetaKey}>Fecha</Text>
-                  <Text style={styles.receiptMetaVal}>{new Date(orderData.created_at).toLocaleString('es-CO')}</Text>
+                  <Text style={styles.receiptMetaVal}>{new Date(orderData.created_at || Date.now()).toLocaleString('es-CO')}</Text>
                 </View>
                 <View style={styles.receiptMetaRow}>
                   <Text style={styles.receiptMetaKey}>N° Pedido</Text>
@@ -416,7 +687,7 @@ const CartScreen = ({ navigation }) => {
                   ))}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
                     <Text style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1 }}>Domicilio</Text>
-                    <Text style={{ color: COLORS.textPrimary, fontSize: 13 }}>$ 4.000</Text>
+                    <Text style={{ color: COLORS.textPrimary, fontSize: 13 }}>{formatPrice(orderData.delivery_fee ?? deliveryFee)}</Text>
                   </View>
                 </View>
 
@@ -428,6 +699,30 @@ const CartScreen = ({ navigation }) => {
                 </View>
               </View>
             )}
+
+            {/* Subtle Resend Link in case WhatsApp didn't launch automatically */}
+            <TouchableOpacity
+              style={{ paddingVertical: 8, marginBottom: 10, alignItems: 'center' }}
+              onPress={() => {
+                if (orderData) {
+                  const ADMIN_PHONE = "573114661605";
+                  const msg = buildWhatsAppMessage(
+                    orderData.id,
+                    orderData.itemsSnapshot || [],
+                    orderData.subtotal || subtotal,
+                    orderData.discount_amount || discountAmount,
+                    orderData.delivery_fee ?? deliveryFee,
+                    orderData.total,
+                    orderData.deliverySnapshot || deliveryData
+                  );
+                  sendToWhatsApp(ADMIN_PHONE, msg);
+                }
+              }}
+            >
+              <Text style={{ color: '#25D366', fontSize: 13, textDecorationLine: 'underline', fontWeight: '600' }}>
+                ¿No se abrió WhatsApp? Toca aquí para reintentar
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.receiptCloseBtn} onPress={handleCloseReceipt}>
               <LinearGradient colors={[COLORS.gold, COLORS.goldDark]} style={styles.receiptCloseBtnGrad}>

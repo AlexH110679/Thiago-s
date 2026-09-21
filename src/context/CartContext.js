@@ -1,6 +1,7 @@
 // src/context/CartContext.js
 import React, { createContext, useContext, useReducer, useCallback, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchDeliveryFee, updateDeliveryFeeInDB } from '../services/productService';
 
 const CartContext = createContext(null);
 
@@ -93,19 +94,36 @@ export const CartProvider = ({ children }) => {
       try {
         const stored = await AsyncStorage.getItem('@delivery_cost');
         if (stored) {
-          setDeliveryCost(parseInt(stored, 10));
+          const parsedStored = parseInt(stored.toString().replace(/[^0-9]/g, ''), 10);
+          if (!isNaN(parsedStored) && parsedStored >= 0) {
+            setDeliveryCost(parsedStored);
+          }
         }
-      } catch (e) {}
+        const dbFee = await fetchDeliveryFee();
+        if (dbFee !== null && !isNaN(dbFee) && dbFee >= 0) {
+          setDeliveryCost(dbFee);
+          await AsyncStorage.setItem('@delivery_cost', dbFee.toString());
+        }
+      } catch (e) {
+        console.warn('Error loading delivery cost:', e.message);
+      }
     };
     loadDeliveryCost();
   }, []);
 
   const updateDeliveryCost = useCallback(async (newCost) => {
     try {
-      await AsyncStorage.setItem('@delivery_cost', newCost.toString());
-      setDeliveryCost(parseInt(newCost, 10));
+      if (newCost === undefined || newCost === null) return false;
+      const cleaned = newCost.toString().replace(/[^0-9]/g, '');
+      const parsed = parseInt(cleaned, 10);
+      if (isNaN(parsed) || parsed < 0) return false;
+
+      setDeliveryCost(parsed);
+      await AsyncStorage.setItem('@delivery_cost', parsed.toString());
+      await updateDeliveryFeeInDB(parsed);
       return true;
     } catch (e) {
+      console.error('Error updating delivery cost:', e);
       return false;
     }
   }, []);

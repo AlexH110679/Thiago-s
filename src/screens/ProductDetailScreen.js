@@ -86,19 +86,12 @@ const ProductDetailScreen = ({ route, navigation }) => {
               <Text style={styles.priceLabel}>Precio unitario</Text>
               <Text style={styles.productPrice}>{formatPrice(product.price)}</Text>
             </View>
-            <View style={styles.stockBox}>
-              <Ionicons
-                name={product.stock > 5 ? 'checkmark-circle' : 'alert-circle'}
-                size={16}
-                color={product.stock > 5 ? COLORS.success : COLORS.danger}
-              />
-              <Text style={[
-                styles.stockText,
-                { color: product.stock > 5 ? COLORS.success : COLORS.danger }
-              ]}>
-                {product.stock > 0 ? `${product.stock} disponibles` : 'Sin stock'}
-              </Text>
-            </View>
+            {isOutOfStock && (
+              <View style={[styles.stockBox, { borderColor: COLORS.danger + '55', backgroundColor: COLORS.dangerSoft }]}>
+                <Ionicons name="alert-circle" size={16} color={COLORS.danger} />
+                <Text style={[styles.stockText, { color: COLORS.danger }]}>Agotado</Text>
+              </View>
+            )}
           </View>
 
           {/* Divider */}
@@ -118,15 +111,7 @@ const ProductDetailScreen = ({ route, navigation }) => {
               <Text style={styles.detailKey}>Tipo / Categoría</Text>
               <Text style={styles.detailValue}>{product.type}</Text>
             </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailKey}>Stock</Text>
-              <Text style={[
-                styles.detailValue,
-                { color: product.stock > 5 ? COLORS.success : COLORS.danger }
-              ]}>
-                {product.stock} unidades
-              </Text>
-            </View>
+
             {inCart && (
               <View style={styles.detailRow}>
                 <Text style={styles.detailKey}>En tu carrito</Text>

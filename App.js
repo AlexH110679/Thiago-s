@@ -15,9 +15,12 @@ import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CartScreen from './src/screens/CartScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
+import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
 import { CartProvider, useCart } from './src/context/CartContext';
+import { AlertProvider } from './src/context/AlertContext';
 import { COLORS, SIZES } from './src/constants/theme';
 import { seedProductsIfEmpty } from './src/services/productService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -122,15 +125,6 @@ const MainTabs = () => (
         tabBarIcon: CartTabIcon,
       }}
     />
-    <Tab.Screen
-      name="Pedidos"
-      component={OrdersScreen}
-      options={{
-        tabBarIcon: ({ color, focused }) => (
-          <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={24} color={color} />
-        ),
-      }}
-    />
   </Tab.Navigator>
 );
 
@@ -140,18 +134,24 @@ const AppNav = () => (
   <RootStack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
     <RootStack.Screen name="Main" component={MainTabs} />
     <RootStack.Screen name="Admin" component={AdminScreen} />
+    <RootStack.Screen name="AdminOrders" component={OrdersScreen} />
   </RootStack.Navigator>
 );
 
 // --- App Entry ---
 export default function App() {
   const [initialized, setInitialized] = useState(false);
+  const [policiesAccepted, setPoliciesAccepted] = useState(false);
   const [initError, setInitError] = useState(null);
 
   useEffect(() => {
     const init = async () => {
       try {
         await seedProductsIfEmpty();
+        const accepted = await AsyncStorage.getItem('policies_accepted_v2');
+        if (accepted === 'true') {
+          setPoliciesAccepted(true);
+        }
       } catch (e) {
         // Fail silently — app works in offline mode
         console.warn('Init seed failed:', e.message);
@@ -172,14 +172,35 @@ export default function App() {
     );
   }
 
+  const handleAcceptPolicies = async () => {
+    try {
+      await AsyncStorage.setItem('policies_accepted_v2', 'true');
+      setPoliciesAccepted(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!policiesAccepted) {
+    return (
+      <SafeAreaProvider>
+        <AlertProvider>
+          <PrivacyPolicyScreen onAccept={handleAcceptPolicies} />
+        </AlertProvider>
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <CartProvider>
-          <NavigationContainer theme={AmbrosiaNavTheme}>
-            <AppNav />
-          </NavigationContainer>
-        </CartProvider>
+        <AlertProvider>
+          <CartProvider>
+            <NavigationContainer theme={AmbrosiaNavTheme}>
+              <AppNav />
+            </NavigationContainer>
+          </CartProvider>
+        </AlertProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

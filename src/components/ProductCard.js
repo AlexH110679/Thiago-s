@@ -34,7 +34,6 @@ const ProductCard = ({ product, onPress }) => {
   const cartItem = items.find(i => i.id === product.id);
   const inCart = cartItem?.quantity > 0;
   const isOutOfStock = product.stock <= 0;
-  const isLowStock = product.stock > 0 && product.stock <= 5;
   const catColor = CATEGORY_COLORS[product.category] || COLORS.gold;
   const catIcon = CATEGORY_ICONS[product.category] || 'pricetag';
 
@@ -60,25 +59,14 @@ const ProductCard = ({ product, onPress }) => {
           style={styles.image}
           resizeMode="cover"
         />
-        {/* Category Badge */}
-        <View style={[styles.categoryBadge, { backgroundColor: catColor + '22', borderColor: catColor + '44' }]}>
-          <Ionicons name={catIcon} size={11} color={catColor} />
-          <Text style={[styles.categoryBadgeText, { color: catColor }]}>
-            {CATEGORY_LABELS[product.category] || product.category}
-          </Text>
-        </View>
+
         {/* Stock Badge */}
         {isOutOfStock && (
           <View style={styles.outOfStockBadge}>
             <Text style={styles.outOfStockText}>Agotado</Text>
           </View>
         )}
-        {isLowStock && !isOutOfStock && (
-          <View style={styles.lowStockBadge}>
-            <Text style={styles.lowStockText}>¡Últimas {product.stock}!</Text>
-          </View>
-        )}
-        {product.featured && !isOutOfStock && !isLowStock && (
+        {product.featured && !isOutOfStock && (
           <View style={styles.featuredBadge}>
             <Ionicons name="star" size={10} color={COLORS.gold} />
             <Text style={styles.featuredText}>Destacado</Text>
@@ -88,6 +76,14 @@ const ProductCard = ({ product, onPress }) => {
 
       {/* Info */}
       <View style={styles.info}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <View style={[styles.categoryBadge, { backgroundColor: catColor + '22' }]}>
+            <Ionicons name={catIcon} size={10} color={catColor} />
+            <Text style={[styles.categoryBadgeText, { color: catColor }]}>
+              {CATEGORY_LABELS[product.category] || product.category}
+            </Text>
+          </View>
+        </View>
         <Text style={styles.productType} numberOfLines={1}>{product.type}</Text>
         <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
         <View style={styles.priceRow}>
@@ -136,16 +132,13 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   categoryBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
   },
   categoryBadgeText: {
     fontSize: 9,
@@ -202,18 +195,19 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   productType: {
-    color: COLORS.gold,
+    color: COLORS.textMuted,
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 3,
+    marginBottom: 4,
   },
   productName: {
     color: COLORS.textPrimary,
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 18,
+    height: 36, // Fixed height to ensure 2 lines of space always
     marginBottom: 8,
   },
   priceRow: {

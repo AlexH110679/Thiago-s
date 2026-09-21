@@ -1,5 +1,5 @@
-// src/screens/OrdersScreen.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -14,22 +14,57 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import CustomAlertModal from '../components/CustomAlertModal';
 import { COLORS, SIZES } from '../constants/theme';
-import { fetchOrders } from '../services/productService';
+import { fetchOrders, deleteOrder } from '../services/productService';
 
-const OrdersScreen = () => {
+const OrdersScreen = ({ navigation }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  // Custom Styled Alert State
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Aceptar',
+    cancelText: null,
+    onConfirm: null,
+    onCancel: null,
+  });
+
+  const showAlert = ({ title, message, type = 'info', confirmText = 'Aceptar', cancelText = null, onConfirm = null, onCancel = null }) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      confirmText,
+      cancelText,
+      onConfirm,
+      onCancel,
+    });
+  };
+  
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const pageSize = 10;
+  const totalPages = Math.ceil(totalOrders / pageSize);
+
   const formatPrice = (p) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(p);
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (currentPage = 1) => {
     try {
-      const data = await fetchOrders();
-      setOrders(data);
+      setLoading(true);
+      const { orders: fetchedOrders, totalCount } = await fetchOrders(currentPage, pageSize);
+      setOrders(fetchedOrders);
+      setTotalOrders(totalCount);
+      setPage(currentPage);
     } catch (e) {
       console.error('Error loading orders:', e.message);
     } finally {
@@ -38,14 +73,46 @@ const OrdersScreen = () => {
     }
   }, []);
 
-  useEffect(() => {
-    loadOrders();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadOrders(1);
+    }, [loadOrders])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadOrders();
-  }, [loadOrders]);
+    loadOrders(page);
+  }, [loadOrders, page]);
+
+  const handleDeleteOrder = (orderId) => {
+    showAlert({
+      title: 'Eliminar Historial',
+      message: `¿Estás seguro de que deseas borrar el pedido #${String(orderId).padStart(4, '0')} del historial? Esta acción no se puede revertir.`,
+      type: 'danger',
+      confirmText: 'Sí, Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          setLoading(true);
+          await deleteOrder(orderId);
+          setSelectedOrder(null);
+          await loadOrders(page);
+          showAlert({
+            title: 'Historial Eliminado',
+            message: 'El registro del pedido fue borrado exitosamente del sistema.',
+            type: 'success',
+          });
+        } catch (error) {
+          showAlert({
+            title: 'Error al Eliminar',
+            message: 'No se pudo eliminar el pedido del historial. Inténtalo nuevamente.',
+            type: 'danger',
+          });
+          setLoading(false);
+        }
+      },
+    });
+  };
 
   const getOrderItems = (order) => {
     try {
@@ -108,6 +175,9 @@ const OrdersScreen = () => {
 
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity style={{ marginRight: SIZES.md }} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Historial de Pedidos</Text>
         {orders.length > 0 && (
           <View style={styles.orderCountBadge}>
@@ -117,18 +187,18 @@ const OrdersScreen = () => {
       </View>
 
       {/* Stats Banner */}
-      {orders.length > 0 && (
+      {totalOrders > 0 && (
         <View style={styles.statsBanner}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{orders.length}</Text>
-            <Text style={styles.statLabel}>Pedidos</Text>
+            <Text style={styles.statValue}>{totalOrders}</Text>
+            <Text style={styles.statLabel}>Total Pedidos</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>
               {formatPrice(orders.reduce((s, o) => s + (o.total || 0), 0))}
             </Text>
-            <Text style={styles.statLabel}>Total Facturado</Text>
+            <Text style={styles.statLabel}>Facturado (Pág. {page})</Text>
           </View>
         </View>
       )}
@@ -154,6 +224,33 @@ const OrdersScreen = () => {
               <Text style={styles.emptyDesc}>Tus compras realizadas aparecerán aquí.</Text>
             </View>
           }
+          ListFooterComponent={
+            totalOrders > 0 && totalPages > 1 ? (
+              <View style={styles.paginationContainer}>
+                <TouchableOpacity
+                  style={[styles.pageBtn, page === 1 && styles.pageBtnDisabled]}
+                  onPress={() => loadOrders(page - 1)}
+                  disabled={page === 1}
+                >
+                  <Ionicons name="chevron-back" size={20} color={page === 1 ? COLORS.textMuted : COLORS.textPrimary} />
+                  <Text style={[styles.pageBtnText, page === 1 && { color: COLORS.textMuted }]}>Anterior</Text>
+                </TouchableOpacity>
+                
+                <Text style={styles.pageIndicator}>
+                  Pág {page} de {totalPages}
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.pageBtn, page === totalPages && styles.pageBtnDisabled]}
+                  onPress={() => loadOrders(page + 1)}
+                  disabled={page === totalPages}
+                >
+                  <Text style={[styles.pageBtnText, page === totalPages && { color: COLORS.textMuted }]}>Siguiente</Text>
+                  <Ionicons name="chevron-forward" size={20} color={page === totalPages ? COLORS.textMuted : COLORS.textPrimary} />
+                </TouchableOpacity>
+              </View>
+            ) : null
+          }
         />
       )}
 
@@ -169,9 +266,14 @@ const OrdersScreen = () => {
             <View style={styles.detailModal}>
               <View style={styles.detailHeader}>
                 <Text style={styles.detailTitle}>Pedido #{String(selectedOrder.id).padStart(4, '0')}</Text>
-                <TouchableOpacity onPress={() => setSelectedOrder(null)}>
-                  <Ionicons name="close-circle" size={28} color={COLORS.textMuted} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => handleDeleteOrder(selectedOrder.id)}>
+                    <Ionicons name="trash-outline" size={24} color={COLORS.danger} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setSelectedOrder(null)}>
+                    <Ionicons name="close-circle" size={28} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.detailMeta}>
@@ -205,6 +307,12 @@ const OrdersScreen = () => {
                       </Text>
                     </View>
                   )}
+                  {selectedOrder.delivery_fee > 0 && (
+                    <View style={styles.detailAmountRow}>
+                      <Text style={styles.detailAmountLabel}>Domicilio</Text>
+                      <Text style={styles.detailAmountValue}>{formatPrice(selectedOrder.delivery_fee)}</Text>
+                    </View>
+                  )}
                   <View style={styles.detailAmountRow}>
                     <Text style={styles.detailTotalLabel}>TOTAL</Text>
                     <Text style={styles.detailTotalValue}>{formatPrice(selectedOrder.total)}</Text>
@@ -215,6 +323,19 @@ const OrdersScreen = () => {
           </View>
         )}
       </Modal>
+
+      {/* Custom Styled Alert Modal */}
+      <CustomAlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={alertConfig.onConfirm}
+        onCancel={alertConfig.onCancel}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 };
@@ -384,6 +505,39 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 13,
     textAlign: 'center',
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: SIZES.md,
+    marginTop: SIZES.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgSecondary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: SIZES.radiusSm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 4,
+  },
+  pageBtnDisabled: {
+    opacity: 0.5,
+  },
+  pageBtnText: {
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  pageIndicator: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Detail Modal
   detailOverlay: {

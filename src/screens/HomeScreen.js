@@ -20,18 +20,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ProductCard from '../components/ProductCard';
-import { fetchProducts, searchProducts } from '../services/productService';
+import { fetchProducts, searchProducts, fetchCustomCategories } from '../services/productService';
 import { COLORS, SIZES, CATEGORIES } from '../constants/theme';
 import { useCart } from '../context/CartContext';
+import { useAlert } from '../context/AlertContext';
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
   const { itemCount } = useCart();
+  const { showAlert } = useAlert();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
+  const [allCategories, setAllCategories] = useState(CATEGORIES);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('default');
   const [adminModalVisible, setAdminModalVisible] = useState(false);
@@ -39,15 +42,35 @@ const HomeScreen = ({ navigation }) => {
   const scrollY = useRef(new Animated.Value(0)).current;
   const categoryScrollRef = useRef(null);
 
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const custom = await fetchCustomCategories();
+        if (custom && custom.length > 0) {
+          const defaultIds = new Set(CATEGORIES.map(c => c.id));
+          const filteredCustom = custom.filter(c => !defaultIds.has(c.id));
+          setAllCategories([...CATEGORIES, ...filteredCustom]);
+        } else {
+          setAllCategories(CATEGORIES);
+        }
+      } catch (e) {
+        console.warn('Error loading custom categories in HomeScreen:', e);
+      }
+    };
+    const unsubscribe = navigation.addListener('focus', loadCategories);
+    loadCategories();
+    return unsubscribe;
+  }, [navigation]);
+
   const orderedCategories = React.useMemo(() => {
     if (activeCategory === 'all') {
-      return CATEGORIES;
+      return allCategories;
     }
-    const allTab = CATEGORIES.find(c => c.id === 'all');
-    const activeTab = CATEGORIES.find(c => c.id === activeCategory);
-    const others = CATEGORIES.filter(c => c.id !== 'all' && c.id !== activeCategory);
+    const allTab = allCategories.find(c => c.id === 'all');
+    const activeTab = allCategories.find(c => c.id === activeCategory);
+    const others = allCategories.filter(c => c.id !== 'all' && c.id !== activeCategory);
     return [allTab, activeTab, ...others].filter(Boolean);
-  }, [activeCategory]);
+  }, [activeCategory, allCategories]);
 
   useEffect(() => {
     if (categoryScrollRef.current) {
@@ -87,7 +110,7 @@ const HomeScreen = ({ navigation }) => {
       setAdminModalVisible(false);
       navigation.navigate('Admin');
     } else {
-      Alert.alert('Acceso Denegado', 'El PIN ingresado es incorrecto.');
+      showAlert('Acceso Denegado', 'El PIN ingresado es incorrecto.', [{ text: 'Aceptar', style: 'destructive' }]);
     }
   };
 
@@ -159,10 +182,11 @@ const HomeScreen = ({ navigation }) => {
           <Ionicons name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar cervezas, licores, snacks..."
-            placeholderTextColor={COLORS.textMuted}
+            placeholder="¿Qué vas a pedir hoy?"
+            placeholderTextColor={COLORS.textSecondary}
             value={searchTerm}
             onChangeText={setSearchTerm}
+            autoCorrect={false}
           />
           {searchTerm.length > 0 && (
             <TouchableOpacity onPress={() => setSearchTerm('')}>
@@ -495,7 +519,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: COLORS.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
   },
   sortBtn: {
     width: 44,
